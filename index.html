@@ -1445,10 +1445,10 @@
         </div>
 
         <button type="submit" class="modal-submit">
-          Continuar pelo WhatsApp →
+          Ir pro pagamento seguro →
         </button>
         <p class="modal-foot-note">
-          Ao continuar, abrimos uma conversa no WhatsApp com seus dados pré-preenchidos pra fechar o pagamento (Pix, cartão até 18x ou boleto). *Valor sujeito a variação conforme cotação do dólar do dia da compra.
+          Ao continuar, você será redirecionado pro ambiente seguro de pagamento (Pix, cartão até 18× ou boleto). Pagamento processado pela ParceladoPay com criptografia SSL. *Valor sujeito a variação conforme cotação do dólar do dia da compra.
         </p>
       </form>
     </div>
@@ -1556,7 +1556,7 @@
   });
 
   // ----- Submit -> WhatsApp with all data -----
-  function submitCheckout(e) {
+  async function submitCheckout(e) {
     e.preventDefault();
     const f = e.target;
     const required = ['cpf','nome','email','telefone','cep','endereco','numero','bairro','cidade','estado'];
@@ -1566,21 +1566,22 @@
     }
     const get = id => f.querySelector('#' + id).value.trim();
     const compl = get('complemento');
-    const msg =
-`Olá! Quero comprar a *Bambu Lab P1S Combo* (com AMS) por R$ 7.970*
 
-*👤 Dados do titular:*
-Nome: ${get('nome')}
-CPF/CNPJ: ${get('cpf')}
-E-mail: ${get('email')}
-WhatsApp: +55 ${get('telefone')}
+    // Dados do cliente — usado tanto na API quanto no fallback WhatsApp
+    const clientData = {
+      nome: get('nome'),
+      cpf: get('cpf'),
+      email: get('email'),
+      telefone: get('telefone'),
+      cep: get('cep'),
+      endereco: get('endereco'),
+      numero: get('numero'),
+      complemento: compl,
+      bairro: get('bairro'),
+      cidade: get('cidade'),
+      estado: get('estado')
+    };
 
-*📍 Endereço de entrega:*
-${get('endereco')}, ${get('numero')}${compl ? ' — ' + compl : ''}
-${get('bairro')} — ${get('cidade')}/${get('estado')}
-CEP: ${get('cep')}
-
-Aguardo confirmação do valor final (cotação do dólar do dia) e instruções de pagamento.`;
     track('qualify_lead', {
       product: 'Bambu Lab P1S Combo',
       value: 7970,
@@ -1588,7 +1589,62 @@ Aguardo confirmação do valor final (cotação do dólar do dia) e instruções
       city: get('cidade'),
       state: get('estado')
     });
-    window.open('https://wa.me/13053152155?text=' + encodeURIComponent(msg), '_blank');
+
+    // Mensagem de fallback pra WhatsApp (usada se a API falhar)
+    const whatsappMsg =
+`Olá! Quero comprar a *Bambu Lab P1S Combo* (com AMS) por R$ 7.970*
+
+*👤 Dados do titular:*
+Nome: ${clientData.nome}
+CPF/CNPJ: ${clientData.cpf}
+E-mail: ${clientData.email}
+WhatsApp: +55 ${clientData.telefone}
+
+*📍 Endereço de entrega:*
+${clientData.endereco}, ${clientData.numero}${compl ? ' — ' + compl : ''}
+${clientData.bairro} — ${clientData.cidade}/${clientData.estado}
+CEP: ${clientData.cep}
+
+Aguardo instruções de pagamento.`;
+
+    const submitBtn = f.querySelector('.modal-submit');
+    const originalBtnText = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Gerando link de pagamento…';
+    }
+
+    try {
+      const resp = await fetch('/api/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientData)
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data.success && data.paymentUrl) {
+        // SUCESSO: redireciona pro ambiente seguro do ParceladoPay
+        track('begin_checkout_redirect', { orderId: data.orderId, product: 'Bambu Lab P1S Combo' });
+        window.location.href = data.paymentUrl;
+        return;
+      }
+
+      // FALHA: fallback WhatsApp
+      console.warn('Falha ao gerar link de pagamento, redirecionando pro WhatsApp:', data);
+      track('payment_link_fallback_wa', { reason: data.error || 'unknown' });
+      window.open('https://wa.me/13053152155?text=' + encodeURIComponent(whatsappMsg), '_blank');
+
+    } catch (err) {
+      // ERRO DE REDE: fallback WhatsApp também
+      console.error('Erro de rede ao chamar /api/create-payment:', err);
+      track('payment_link_fallback_wa', { reason: 'network_error' });
+      window.open('https://wa.me/13053152155?text=' + encodeURIComponent(whatsappMsg), '_blank');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+      }
+    }
   }
 
   // Track WhatsApp float clicks
