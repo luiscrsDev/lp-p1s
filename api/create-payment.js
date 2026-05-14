@@ -111,10 +111,13 @@ export default async function handler(req, res) {
     const orderData = await orderResp.json();
 
     if (orderData.statusType !== 'success' || !orderData.data?.url) {
-      console.error('[create-payment] Order creation failed:', orderData);
+      console.error('[create-payment] Order creation failed:', JSON.stringify(orderData), 'HTTP', orderResp.status);
       return res.status(502).json({
         error: 'Falha ao criar link de pagamento.',
-        detail: orderData.msg || null
+        detail: orderData.msg || orderData.message || null,
+        gateway_status: orderResp.status,
+        gateway_response: orderData,
+        sent_payload_keys: Object.keys(orderBody)
       });
     }
 
