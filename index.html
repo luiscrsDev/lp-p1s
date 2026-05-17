@@ -1614,11 +1614,15 @@ Aguardo instruções de pagamento.`;
       submitBtn.textContent = 'Gerando link de pagamento…';
     }
 
+    // API central GBS (compartilhada por todas as LPs)
+    const PAYMENTS_API = 'https://api.globalbrasilshop.com/api/create-payment';
+    const PRODUCT_ID = 'p1s';
+
     try {
-      const resp = await fetch('/api/create-payment', {
+      const resp = await fetch(PAYMENTS_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(clientData)
+        body: JSON.stringify({ product_id: PRODUCT_ID, ...clientData })
       });
       const data = await resp.json();
 
@@ -1636,7 +1640,7 @@ Aguardo instruções de pagamento.`;
 
     } catch (err) {
       // ERRO DE REDE: fallback WhatsApp também
-      console.error('Erro de rede ao chamar /api/create-payment:', err);
+      console.error('Erro de rede ao chamar API central de pagamentos:', err);
       track('payment_link_fallback_wa', { reason: 'network_error' });
       window.open('https://wa.me/13053152155?text=' + encodeURIComponent(whatsappMsg), '_blank');
     } finally {
